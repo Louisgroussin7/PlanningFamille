@@ -3,7 +3,6 @@ import { StyleSheet, Text, View, TouchableOpacity, FlatList, SafeAreaView, Alert
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, doc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
-// Vos clés Firebase officielles intégrées
 const firebaseConfig = {
   apiKey: "AIzaSyABZs5PVed-nMAJG3ytFJ11XwCV-cyPuKs",
   authDomain: "planningfamille-a63ff.firebaseapp.com",
@@ -18,7 +17,9 @@ const db = getFirestore(app);
 
 export default function App() {
   const [taches, setTaches] = useState([]);
-  const [utilisateur, setUtilisateur] = useState("Chef"); // À modifier sur chaque iPhone (ex: Papa, Maman)
+  const [utilisateur, setUtilisateur] = useState("Louis"); // Chef devient Louis
+  
+  const membres = ["Louis", "Papa", "Maman", "Sœur"]; 
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "planning"), (snapshot) => {
@@ -42,17 +43,33 @@ export default function App() {
 
   const initPlanning = async () => {
     const jours = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
-    const missions = ["Vaisselle", "Cuisine", "Ménage", "Courses"];
+    const missionsQuotidiennes = ["Vaisselle", "Cuisine", "Ménage"]; // Sans les courses
+    
+    let ordre = 0;
     
     for (let i = 0; i < jours.length; i++) {
-      for (let j = 0; j < missions.length; j++) {
-        const id = `${jours[i]}-${missions[j]}`;
+      // Ajouter les missions de base pour chaque jour
+      for (let j = 0; j < missionsQuotidiennes.length; j++) {
+        const id = `${jours[i]}-${missionsQuotidiennes[j]}`;
         await setDoc(doc(db, "planning", id), {
           jour: jours[i],
-          mission: missions[j],
+          mission: missionsQuotidiennes[j],
           responsable: "",
-          ordre: i * 10 + j
+          ordre: ordre
         });
+        ordre++;
+      }
+      
+      // Ajouter les Courses UNIQUEMENT si on est Samedi
+      if (jours[i] === "Samedi") {
+        const id = `${jours[i]}-Courses`;
+        await setDoc(doc(db, "planning", id), {
+          jour: jours[i],
+          mission: "Courses",
+          responsable: "",
+          ordre: ordre
+        });
+        ordre++;
       }
     }
   };
@@ -60,7 +77,21 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.titre}>🏠 Planning de la Brigade</Text>
-      <Text style={styles.sousTitre}>Connecté en tant que : {utilisateur}</Text>
+
+      <View style={styles.selecteurContainer}>
+        <Text style={styles.selecteurTexte}>Qui êtes-vous ?</Text>
+        <View style={styles.boutonsMembres}>
+          {membres.map(m => (
+            <TouchableOpacity 
+              key={m} 
+              style={[styles.btnMembre, utilisateur === m && styles.btnMembreActif]}
+              onPress={() => setUtilisateur(m)}
+            >
+              <Text style={[styles.txtMembre, utilisateur === m && styles.txtMembreActif]}>{m}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
 
       {taches.length === 0 ? (
         <TouchableOpacity style={styles.btnInit} onPress={initPlanning}>
@@ -77,7 +108,7 @@ export default function App() {
                 <Text style={styles.mission}>{item.mission}</Text>
               </View>
               {item.responsable ? (
-                <View style={[styles.badge, { backgroundColor: item.responsable === "Chef" ? "#3498db" : "#e67e22" }]}>
+                <View style={[styles.badge, { backgroundColor: item.responsable === "Louis" ? "#3498db" : "#e67e22" }]}>
                   <Text style={styles.badgeText}>{item.responsable}</Text>
                 </View>
               ) : (
@@ -90,7 +121,8 @@ export default function App() {
         />
       )}
 
-      {utilisateur === "Chef" && taches.length > 0 && (
+      {/* Le bouton Reset n'apparaît QUE si l'utilisateur est Louis */}
+      {utilisateur === "Louis" && taches.length > 0 && (
         <TouchableOpacity style={styles.btnReset} onPress={resetSemaine}>
           <Text style={styles.btnText}>🔄 Reset du Dimanche</Text>
         </TouchableOpacity>
@@ -101,8 +133,14 @@ export default function App() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f2f5', padding: 20 },
-  titre: { fontSize: 26, fontWeight: 'bold', color: '#2c3e50', textAlign: 'center', marginTop: 20 },
-  sousTitre: { textAlign: 'center', color: '#7f8c8d', marginBottom: 20 },
+  titre: { fontSize: 26, fontWeight: 'bold', color: '#2c3e50', textAlign: 'center', marginTop: 20, marginBottom: 10 },
+  selecteurContainer: { backgroundColor: '#fff', padding: 10, borderRadius: 12, marginBottom: 15, elevation: 2 },
+  selecteurTexte: { textAlign: 'center', color: '#7f8c8d', marginBottom: 8, fontWeight: 'bold' },
+  boutonsMembres: { flexDirection: 'row', justifyContent: 'space-around' },
+  btnMembre: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, backgroundColor: '#ecf0f1' },
+  btnMembreActif: { backgroundColor: '#34495e' },
+  txtMembre: { color: '#7f8c8d', fontWeight: 'bold' },
+  txtMembreActif: { color: '#fff' },
   card: { backgroundColor: '#fff', padding: 15, borderRadius: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, elevation: 2 },
   jour: { fontSize: 14, color: '#95a5a6', fontWeight: 'bold' },
   mission: { fontSize: 18, color: '#2c3e50' },
