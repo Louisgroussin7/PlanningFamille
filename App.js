@@ -15,6 +15,40 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// --- NOUVEAU COMPOSANT : La carte des commentaires ---
+const NoteCard = ({ item }) => {
+  const [texteLocal, setTexteLocal] = useState(item.texte || "");
+
+  useEffect(() => {
+    setTexteLocal(item.texte || "");
+  }, [item.texte]);
+
+  const sauvegarderNote = async () => {
+    const ref = doc(db, "planning", item.id);
+    await updateDoc(ref, { texte: texteLocal });
+  };
+
+  return (
+    <View style={styles.cardNote}>
+      <Text style={styles.jour}>{item.jour}</Text>
+      <Text style={styles.mission}>📝 Petits mots & Extras</Text>
+      <View style={styles.noteContainer}>
+        <TextInput
+          style={styles.inputNote}
+          value={texteLocal}
+          onChangeText={setTexteLocal}
+          placeholder="Ex: J'ai passé l'aspirateur..."
+          multiline={true}
+        />
+        <TouchableOpacity style={styles.btnSaveNote} onPress={sauvegarderNote}>
+          <Text style={styles.btnText}>Envoyer</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+// ------------------------------------------------------
+
 export default function App() {
   const [taches, setTaches] = useState([]);
   const [utilisateur, setUtilisateur] = useState("Louis");
@@ -54,22 +88,23 @@ export default function App() {
       Alert.alert("Verrouillé", "Entrez votre mot de passe.");
       return;
     }
-    
-    // Vérifier si la personne est déjà inscrite à cette tâche
     if (tache.responsables.includes(utilisateur)) {
       Alert.alert("Info", "Vous êtes déjà inscrit à cette mission !");
       return;
     }
-
     const ref = doc(db, "planning", tache.id);
-    await updateDoc(ref, { 
-      responsables: arrayUnion(utilisateur) 
-    });
+    await updateDoc(ref, { responsables: arrayUnion(utilisateur) });
   };
 
   const resetSemaine = async () => {
     const batch = writeBatch(db);
-    taches.forEach(t => batch.update(doc(db, "planning", t.id), { responsables: [] }));
+    taches.forEach(t => {
+      if (t.mission === "Notes") {
+        batch.update(doc(db, "planning", t.id), { texte: "" }); // Vide les commentaires
+      } else {
+        batch.update(doc(db, "planning", t.id), { responsables: [] }); // Vide les responsables
+      }
+    });
     await batch.commit();
     Alert.alert("Succès", "Le planning a été remis à zéro !");
   };
@@ -80,32 +115,28 @@ export default function App() {
     let ordre = 0;
 
     for (let i = 0; i < jours.length; i++) {
-      // Missions de tous les jours (1 personne)
       for (let j = 0; j < missionsQuotidiennes.length; j++) {
         const id = `${jours[i]}-${missionsQuotidiennes[j]}`;
-        await setDoc(doc(db, "planning", id), { 
-          jour: jours[i], mission: missionsQuotidiennes[j], responsables: [], limite: 1, ordre: ordre 
-        });
+        await setDoc(doc(db, "planning", id), { jour: jours[i], mission: missionsQuotidiennes[j], responsables: [], limite: 1, ordre: ordre });
         ordre++;
       }
 
-      // Ménage : Samedi et Dimanche uniquement (2 personnes)
       if (jours[i] === "Samedi" || jours[i] === "Dimanche") {
         const id = `${jours[i]}-Ménage`;
-        await setDoc(doc(db, "planning", id), { 
-          jour: jours[i], mission: "Ménage", responsables: [], limite: 2, ordre: ordre 
-        });
+        await setDoc(doc(db, "planning", id), { jour: jours[i], mission: "Ménage", responsables: [], limite: 2, ordre: ordre });
         ordre++;
       }
 
-      // Courses : Samedi uniquement (2 personnes)
       if (jours[i] === "Samedi") {
         const id = `${jours[i]}-Courses`;
-        await setDoc(doc(db, "planning", id), { 
-          jour: jours[i], mission: "Courses", responsables: [], limite: 2, ordre: ordre 
-        });
+        await setDoc(doc(db, "planning", id), { jour: jours[i], mission: "Courses", responsables: [], limite: 2, ordre: ordre });
         ordre++;
       }
+
+      // --- NOUVEAU : La case "Notes" à la fin de chaque journée ---
+      const idNote = `${jours[i]}-Notes`;
+      await setDoc(doc(db, "planning", idNote), { jour: jours[i], mission: "Notes", texte: "", ordre: ordre });
+      ordre++;
     }
   };
 
@@ -130,7 +161,7 @@ export default function App() {
         {utilisateur === "Louis" && !estAuthentifie && (
           <View style={styles.loginBox}>
             <TextInput 
-              style={styles.input} 
+              style={styles.inputLogin} 
               placeholder="Code secret..." 
               secureTextEntry={true} 
               value={motDePasse}
@@ -151,34 +182,42 @@ export default function App() {
         <FlatList
           data={taches}
           keyExtractor={item => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.jour}>{item.jour}</Text>
-                <Text style={styles.mission}>{item.mission}</Text>
-                <View style={styles.listeNoms}>
-                  {item.responsables.map((nom, idx) => (
-                    <View key={idx} style={[styles.badge, { backgroundColor: nom === "Louis" ? "#3498db" : "#e67e22" }]}>
-                      <Text style={styles.badgeText}>{nom}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
+          renderItem={({ item }) => {
+            // Si c'est la case des notes, on affiche le composant NoteCard
+            if (item.mission === "Notes") {
+              return <NoteCard item={item} />;
+            }
 
-              {item.responsables.length < item.limite ? (
-                <TouchableOpacity 
-                  style={[styles.btn, (utilisateur === "Louis" && !estAuthentifie) ? {backgroundColor: '#bdc3c7'} : {}]} 
-                  onPress={() => sInscrire(item)}
-                >
-                  <Text style={styles.btnText}>Prendre ({item.limite - item.responsables.length})</Text>
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.complet}>
-                  <Text style={styles.completText}>Complet ✅</Text>
+            // Sinon on affiche la carte de tâche normale
+            return (
+              <View style={styles.card}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.jour}>{item.jour}</Text>
+                  <Text style={styles.mission}>{item.mission}</Text>
+                  <View style={styles.listeNoms}>
+                    {item.responsables.map((nom, idx) => (
+                      <View key={idx} style={[styles.badge, { backgroundColor: nom === "Louis" ? "#3498db" : "#e67e22" }]}>
+                        <Text style={styles.badgeText}>{nom}</Text>
+                      </View>
+                    ))}
+                  </View>
                 </View>
-              )}
-            </View>
-          )}
+
+                {item.responsables.length < item.limite ? (
+                  <TouchableOpacity 
+                    style={[styles.btn, (utilisateur === "Louis" && !estAuthentifie) ? {backgroundColor: '#bdc3c7'} : {}]} 
+                    onPress={() => sInscrire(item)}
+                  >
+                    <Text style={styles.btnText}>Prendre ({item.limite - item.responsables.length})</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.complet}>
+                    <Text style={styles.completText}>Complet ✅</Text>
+                  </View>
+                )}
+              </View>
+            );
+          }}
         />
       )}
 
@@ -202,8 +241,10 @@ const styles = StyleSheet.create({
   txtMembre: { color: '#7f8c8d', fontWeight: 'bold', fontSize: 11 },
   txtMembreActif: { color: '#fff' },
   loginBox: { flexDirection: 'row', marginTop: 15, justifyContent: 'center', alignItems: 'center' },
-  input: { backgroundColor: '#f0f2f5', padding: 8, borderRadius: 8, flex: 1, marginRight: 10, borderBottomWidth: 2, borderColor: '#3498db' },
+  inputLogin: { backgroundColor: '#f0f2f5', padding: 8, borderRadius: 8, flex: 1, marginRight: 10, borderBottomWidth: 2, borderColor: '#3498db' },
   btnValider: { backgroundColor: '#3498db', paddingVertical: 10, paddingHorizontal: 15, borderRadius: 8 },
+  
+  // Styles pour la carte normale
   card: { backgroundColor: '#fff', padding: 15, borderRadius: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, elevation: 2 },
   jour: { fontSize: 11, color: '#95a5a6', fontWeight: 'bold' },
   mission: { fontSize: 16, color: '#2c3e50', marginBottom: 5 },
@@ -215,5 +256,11 @@ const styles = StyleSheet.create({
   badge: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 10, marginRight: 5, marginTop: 2 },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
   complet: { padding: 8 },
-  completText: { color: '#27ae60', fontWeight: 'bold', fontSize: 12 }
+  completText: { color: '#27ae60', fontWeight: 'bold', fontSize: 12 },
+
+  // Styles pour la carte des Notes
+  cardNote: { backgroundColor: '#fff', padding: 15, borderRadius: 12, marginBottom: 8, elevation: 2, borderLeftWidth: 4, borderLeftColor: '#f1c40f' },
+  noteContainer: { flexDirection: 'row', marginTop: 10, alignItems: 'center' },
+  inputNote: { flex: 1, backgroundColor: '#f9f9f9', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#ecf0f1', minHeight: 40 },
+  btnSaveNote: { backgroundColor: '#34495e', padding: 10, borderRadius: 8, marginLeft: 10, justifyContent: 'center', alignItems: 'center' },
 });
